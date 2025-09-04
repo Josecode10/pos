@@ -16,6 +16,7 @@ public class PosController {
     // A temporary list of items for the current transaction.
     private List<SaleItem> currentSaleItems;
 
+    // 
     public PosController(InventoryManager inventoryManager, SaleDAO saleDAO, CustomerDAO customerDAO) {
         this.inventoryManager = inventoryManager;
         this.saleDAO = saleDAO;
