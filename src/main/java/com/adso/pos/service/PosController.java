@@ -1,90 +1,80 @@
 package com.adso.pos.service;
 
-import com.adso.pos.model.Cart;
-import com.adso.pos.model.CartItem;
-import com.adso.pos.model.Customer;
-import com.adso.pos.model.Product;
-import com.adso.pos.model.Sale;
+import java.util.ArrayList;
+import java.util.List;
 
-// The PosController acts as the main entry point and orchestrator for the POS system logic.
-// In a web application, this would be a servlet or a REST controller that handles requests.
-// This class demonstrates how the other classes interact.
+
+// The PosController is the main class that orchestrates the Point of Sale process.
+// It now manages a list of SaleItem objects directly for a transaction.
+
 public class PosController {
-    private Cart cart;
-    private InventoryManager inventoryManager;
 
-    public PosController() {
-        this.cart = new Cart();
-        this.inventoryManager = new InventoryManager();
+    private final InventoryManager inventoryManager;
+    private final SaleDAO saleDAO;
+    private final CustomerDAO customerDAO;
+
+    // A temporary list of items for the current transaction.
+    private List<SaleItem> currentSaleItems;
+
+    public PosController(InventoryManager inventoryManager, SaleDAO saleDAO, CustomerDAO customerDAO) {
+        this.inventoryManager = inventoryManager;
+        this.saleDAO = saleDAO;
+        this.customerDAO = customerDAO;
+        this.currentSaleItems = new ArrayList<>();
     }
 
     /**
-     * Adds a product to the current cart.
+     * Adds a product to the current transaction.
      * @param productId The ID of the product to add.
      * @param quantity The quantity of the product.
+     * @return true if the product was added, false if it's out of stock or not found.
      */
-    public void addItemToCart(int productId, int quantity) {
+    public boolean addItemToSale(int productId, int quantity) {
         Product product = inventoryManager.getProduct(productId);
-        if (product != null && inventoryManager.checkStock(productId, quantity)) {
-            cart.addItem(product, quantity);
-            System.out.println("Added " + quantity + " of " + product.getName() + " to the cart.");
-        } else {
-            System.out.println("Failed to add item. Not enough stock or product not found.");
+        if (product != null && product.getStockQuantity() >= quantity) {
+            currentSaleItems.add(new SaleItem(product, quantity));
+            return true;
         }
+        return false;
     }
 
     /**
-     * Processes a full transaction, converting the cart into a sale.
-     * @param customer The customer for this transaction.
-     * @return The newly created Sale object.
+     * Finalizes the sale, saves it to the database, and updates product stock.
+     * @param customerId The ID of the customer for this sale.
+     * @return true if the sale was successfully completed, false otherwise.
      */
-    public Sale processSale(Customer customer) {
-        if (cart.getItems().isEmpty()) {
-            System.out.println("Cannot process sale: Cart is empty.");
-            return null;
+    public boolean finalizeSale(int customerId) {
+        if (currentSaleItems.isEmpty()) {
+            System.out.println("Cannot finalize an empty sale.");
+            return false;
         }
 
-        System.out.println("Processing sale for customer: " + customer.getName());
-        
-        // Loop through cart items to update inventory
-        for (CartItem item : cart.getItems()) {
-            inventoryManager.updateStock(item.getProduct().getId(), item.getQuantity());
+        // Retrieve the customer from the database.
+        Customer customer = customerDAO.getCustomerById(customerId);
+        if (customer == null) {
+            System.out.println("Customer not found.");
+            return false;
         }
 
-        // Create a unique sale ID (for this example, we'll use a simple timestamp)
-        int saleId = (int) (System.currentTimeMillis() % 10000);
-        
-        Sale newSale = new Sale(saleId, customer, cart);
+        // Create the Sale object.
+        Sale newSale = new Sale(customer, currentSaleItems);
 
-        // Clear the cart for the next transaction.
-        cart = new Cart();
+        try {
+            // Save the sale to the database.
+            saleDAO.saveSale(newSale);
 
-        System.out.println("Sale " + newSale.getSaleId() + " completed successfully!");
-        System.out.println("Total Amount: $" + newSale.getTotalAmount());
+            // Update the stock for each product in the sale.
+            for (SaleItem item : currentSaleItems) {
+                inventoryManager.updateStock(item.getProduct().getId(), -item.getQuantity());
+            }
 
-        return newSale;
-    }
-
-    /**
-     * A simple main method to demonstrate the functionality.
-     */
-    public static void main(String[] args) {
-        PosController pos = new PosController();
-
-        // Simulate a customer and a shopping session.
-        Customer customer = new Customer(1, "John Doe", "john.doe@example.com");
-
-        System.out.println("--- Starting a new transaction ---");
-        pos.addItemToCart(1, 1); // Add a Laptop
-        pos.addItemToCart(2, 2); // Add two Mouses
-        pos.addItemToCart(3, 1); // Add a Keyboard
-
-        // Process the sale.
-        pos.processSale(customer);
-        
-        System.out.println("\n--- Attempting another transaction ---");
-        // Try to add more than is in stock (Keyboard has 30, we'll try to add 35)
-        pos.addItemToCart(3, 35);
-        pos.processSale(customer);
+            // Clear the temporary list for the next transaction.
+            currentSaleItems.clear();
+            return true;
+        } catch (Exception e) {
+            System.err.println("Error finalizing sale: " + e.getMessage());
+            // It might be necessary to roll back database changes here in a more robust system.
+            return false;
+        }
     }
 }
