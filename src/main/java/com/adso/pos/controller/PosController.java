@@ -1,7 +1,9 @@
-package com.adso.pos.service;
+package com.adso.pos.controller;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import com.adso.pos.service.InventoryManager;
 
 
 // The PosController is the main class that orchestrates the Point of Sale process.

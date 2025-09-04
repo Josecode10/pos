@@ -1,4 +1,4 @@
-package com.adso;
+package com.adso.pos.controller;
 
 public class Main {
     public static void main(String[] args) {
